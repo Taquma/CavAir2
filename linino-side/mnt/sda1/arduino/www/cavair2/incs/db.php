@@ -9,6 +9,6 @@
         trigger_error('Database connection failed: '  . $conn->connect_error, E_USER_ERROR);
     }
 
-	date_default_timezone_set('Europe/Berlin');
+    date_default_timezone_set('Europe/Berlin');
 
 ?>

@@ -1,17 +1,17 @@
-
+  
 /* 
 *** CavAir2 ***
 
-NOCH NICHT LAUFFÄHIG!!!
+NOCH NICHT LAUFF�HIG!!!
 
-*** Taupunktedifferenz-gesteuerte Kellerlüftersteuerung mit Datalogging und Web-Anbindung ***
+*** Taupunktedifferenz-gesteuerte Kellerl�ftersteuerung mit Datalogging und Web-Anbindung ***
 
 von Taquma und Count0 (Web-Interface)
-für Fabs&Family&alle anderen
+f�r Fabs&Family&alle anderen
 
 - Arduino YUN
 - 2 x DHT22 Lufttemperatur/Luftfeuchte-Sensor 
-- Funksteckdosen-Sender 434MHz für den Lüfter
+- Funksteckdosen-Sender 434MHz f�r den L�fter
 - Datalogging
 - Web-Anbindung mit 
   * aktuelle Werte
@@ -23,14 +23,14 @@ für Fabs&Family&alle anderen
     + Kellermindesttemperatur (konfigurierbar)
     + Lüfter-Anzeit (konfigurierbar)
     + Hysterese (konfigurierbar)
-    + Zykluslänge (konfigurierbar)
+    + Zyklusl�nge (konfigurierbar)
     + Zyklusstatus
     + Lüfterstatus
   * Datenliste, 
   * graphische Verlaufsanzeige
   * manuelle Lüfterbeschaltung
   
-Letzte Änderung: 26. Juni 2015 by tq
+Letzte �nderung: 26. Juni 2015 by tq
 
 
  Gemacht aus dem
@@ -67,16 +67,31 @@ Letzte Änderung: 26. Juni 2015 by tq
  Ein Lüfter wird per Funksteckdose taupunkt- und intervallabhängig gesteuert.
  Ziel ist die permanente Entfeuchtung der Kellerluft, indem nur gelüftet wird, falls die Außenluft absolut trockener
  ist, als die Kellerluft. Dafür werden Außen- und Kellertaupunkt verglichen, die über Temperatur- und Feuchtewerte
- errechnet werden. Bei positiver Differenz wird dann der Lüfter für beispielsweise 10 Minuten pro Stunde eingeschaltet.
+ errechnet werden. Bei positiver Differenz wird dann der L�fter f�r beispielsweise 10 Minuten pro Stunde eingeschaltet.
    
  */
 
+
+// includes for SaveSensorData.ino -> checked per test!
+#include <Bridge.h>
+#include <Process.h> // already included...
+#include "SaveSensorData.h"
+
+
+
+// include Y�nApi -> checked
+#include <YunServer.h>
+#include <YunClient.h>
+#include "YunApi.h"
+
+
 #include "DHT.h" // DHT-library importieren
 #include <RCSwitch.h> // Funksteckdosen-Library importieren
+
 // Pinbelegung
-#define LUEFTERPIN 6 // Lüfter an Pin 6
-RCSwitch Luefter = RCSwitch();  // Klassendefinition "Luefter" für die RCSwitch-Library
-#define DHTPINaussen 8     // DHT fuer Außen an Pin 8
+#define LUEFTERPIN 6 // L�fter an Pin 6
+RCSwitch Luefter = RCSwitch();  // Klassendefinition "Luefter" f�r die RCSwitch-Library
+#define DHTPINaussen 8     // DHT fuer Au�en an Pin 8
 DHT dhtaussen(DHTPINaussen, DHT22); // Definition des DHT-Objekts
 #define DHTPINkeller 9     // DHT fuer den Keller an Pin 9
 DHT dhtkeller(DHTPINkeller, DHT22); // Definition des DHT-Objekts
@@ -87,32 +102,6 @@ DHT dhtkeller(DHTPINkeller, DHT22); // Definition des DHT-Objekts
 // Connect pin 4 (on the right) of the sensor to GROUND
 // Connect a 10K resistor from pin 2 (data) to pin 1 (power) of the sensor
 
- 
-#include <FreqCount.h>
-
-// includes for YunTimeSync.ino -> checked per test!
-#include <Process.h>
-#include <Time.h>
-#include "YunTimeSync.h"
-
-// includes for SaveSensorData.ino -> checked per test!
-//#include <Process.h> // already included...
-#include "SaveSensorData.h"
-
-// including Sensors -> checked per test!
-#include "Sensors.h"
-
-// include for sensosr config by CSV
-//#include <Process.h> // already included...
-#include "InitSensorsByCsv.h"
-
-// include YùnApi -> checked
-#include <YunServer.h>
-#include <YunClient.h>
-#include "YunApi.h"
-
-// variable for saving sensor data
-char currentComment[14] = "";
 
 
 
@@ -124,27 +113,43 @@ char currentComment[14] = "";
 
 unsigned long Zyklus;
 boolean LuefterStatus;
-long Anzeit = zehnMinuten; 
-long Auszeit = eineStunde; 
+long Anzeit = eineSekunde; 
+long Auszeit = eineMinute; 
 unsigned int Zaehler = 0; // zaehlt, wie oft der Luefter an war
 byte KellerMinTemp = 12; // evtl auf float ändern...
 
 void setup() {
   Serial.begin(9600);
   Luefter.enableTransmit(LUEFTERPIN); // Funksender an Pin 6
-  Luefter.setPulseLength(500); // Pulslänge zum Beschalten der Funksteckdose 500 ms
+  Luefter.setPulseLength(500); // Pulsl�nge zum Beschalten der Funksteckdose 500 ms
 
-  serial.begin(9600);
-  serial.println("***  TAQUMAS  ***"); 
-  serial.println("*    CAVAIR 2   *");
+  Serial.begin(9600);
+
+  // setup Brigde for SaveSensorData
+  Bridge.begin();
+
+  initYunServer();
+
+  // !!!!!!! NUR DEBUG!!!!
+  pinMode(13, OUTPUT);  // initialize the LED pin as an output
+  // waiting for console just for debugging purposes
+  while (!Serial){
+    digitalWrite(13, HIGH);
+  }
+  digitalWrite(13, LOW);
+  delay(200);
+  // !!!!!!! NUR DEBUG!!!!
+  
+  Serial.println("***  TAQUMAS  ***"); 
+  Serial.println("*    CAVAIR 2   *");
   delay(1000);
   
-  serial.println;
-  serial.print(" 32K RAM SYSTEM "); 
-  serial.print("16888 BYTES FREE");
+  Serial.println();
+  Serial.print(" 32K RAM SYSTEM "); 
+  Serial.print(" 8K BYTES FREE");
   delay(1000);
   
-  dhtaussen.begin(); // Öffne die Datenkanäle der Sensoren
+  dhtaussen.begin(); // Öffne die Datenkanüle der Sensoren
   dhtkeller.begin();
   Luefter.switchOn(2, 1); // Lüfter (Steckdose 1 auf Kanal 2) zum Initialisieren einschalten
   delay(1000);
@@ -164,9 +169,9 @@ void loop() {
    // Taupunkteberechnung:
    // Parameter:
   const float a = 7.5;
-  const float b = 237.3; // für T >= 0
-  // a = 7.6, b = 240.7 für T < 0 über Wasser (Taupunkt)
-  // a = 9.5, b = 265.5 für T < 0 über Eis (Frostpunkt)
+  const float b = 237.3; // f�r T >= 0
+  // a = 7.6, b = 240.7 f�r T < 0 �ber Wasser (Taupunkt)
+  // a = 9.5, b = 265.5 f�r T < 0 �ber Eis (Frostpunkt)
 
   // Aussen
   float ra = Aussenfeuchte;
@@ -196,107 +201,115 @@ void loop() {
       delay(1000);     
       Zyklus = millis();
    }
- else if ((LuefterStatus == true) && ((millis() - Zyklus) > Anzeit)){
+   else if ((LuefterStatus == true) && ((millis() - Zyklus) > Anzeit)){
       Luefter.switchOff(2, 1);    
       LuefterStatus = false; 
       delay(1000);     
    } 
+
+  if ((millis() - Zyklus) > Auszeit) {
+    Serial.println(insertSensorDataByPhpCli(Kellertemperatur, Aussentemperatur, Kellerfeuchte, Aussenfeuchte, TDk, TDa, DeltaTp, LuefterStatus));
+  }
    
  // Datenausgabe
    // check if returns are valid, if they are NaN (not a number) then something went wrong!
   if (isnan(Aussentemperatur) || isnan(Aussenfeuchte)  || isnan(Kellertemperatur)  || isnan(Kellerfeuchte)  ) 
   {
-    serial.println("DHT read error!   "); 
-    delay(1000);
+    Serial.println("DHT read error!   ");
   } 
   else {
-          
-      serial.print("Außen: "); 
-      serial.print(Aussenfeuchte); 
-      serial.print("%   "); 
-      serial.print(Aussentemperatur); 
-      serial.write(B11011111); 
-      serial.print("C.  ");
-      serial.println("Keller: "); 
-      serial.print(Kellerfeuchte); 
-      serial.print("%   ");  
-      serial.print(Kellertemperatur); 
-      serial.write(B11011111); 
-      serial.println("C.");
-      serial.println;
+      Serial.println();
+      Serial.println();
+      Serial.println();
+      Serial.print("Außen: "); 
+      Serial.print(Aussenfeuchte); 
+      Serial.print("%   "); 
+      Serial.print(Aussentemperatur); 
+      Serial.write(B11011111); 
+      Serial.println("C.  ");
+      Serial.print("Keller: "); 
+      Serial.print(Kellerfeuchte); 
+      Serial.print("%   ");  
+      Serial.print(Kellertemperatur); 
+      Serial.write(B11011111); 
+      Serial.println("C.");
+      Serial.println();
 
-      serial.print("Taupunkt Außen:  "); 
-      serial.print(TDa);  
-      serial.write(B11011111); 
-      serial.println("C. "); // TDa = Taupunkt Aussen
-      serial.print("Taupunkt Keller:  "); 
-      serial.print(TDk);  
-      serial.write(B11011111); 
-      serial.println("C. "); // TDk = Taupunkt Keller
+      Serial.print("Taupunkt Außen:  "); 
+      Serial.print(TDa);  
+      Serial.write(B11011111); 
+      Serial.println("C. "); // TDa = Taupunkt Aussen
+      Serial.print("Taupunkt Keller:  "); 
+      Serial.print(TDk);  
+      Serial.write(B11011111); 
+      Serial.println("C. "); // TDk = Taupunkt Keller
       
-      serial.print("Taupunktedifferenz: "); 
-      serial.print(DeltaTp);  
-      serial.write(B11011111); 
-      serial.println("C.    "); // DTp = Differenz der Taupunkte
-      serial.print("OnTime: "); 
-      serial.print(millis()/eineStunde); 
-      serial.println(" Std.  ");
+      Serial.print("Taupunktedifferenz: "); 
+      Serial.print(DeltaTp);  
+      Serial.write(B11011111); 
+      Serial.println("C.    "); // DTp = Differenz der Taupunkte
+      Serial.print("OnTime: "); 
+      Serial.print(millis()/eineStunde); 
+      Serial.println(" Std.  ");
     
-      serial.print("Luefterstatus: "); 
-      serial.print(LuefterStatus);
-      serial.print("Zyklus: ");
-      serial.print((millis()-Zyklus)/eineMinute); 
-      serial.println(" Min.     "); // 
+      Serial.print("Luefterstatus: "); 
+      Serial.println(LuefterStatus);
+      Serial.print("Zyklus: ");
+      Serial.print((millis()-Zyklus)/eineSekunde);
+      Serial.println(" Sek.     "); // 
      
-      serial.print("Zaehler: "); 
-      serial.print(Zaehler);
-      serial.print("      ");
-   
-      serial.print("Außenfeuchte: "); 
-      serial.print(Aussenfeuchte); 
-      serial.print("% "); //  
-      serial.print(Aussentemperatur); 
-      serial.write(B11011111); 
-      serial.print("C.   ");
-      serial.print("Kellerfeuchte: "); 
-      serial.print(Kellerfeuchte); 
-      serial.print("% ");  
-      serial.print(Kellertemperatur); 
-      serial.write(B11011111); 
-      serial.println("C.");
+      Serial.print("Zaehler: "); 
+      Serial.print(Zaehler);
+      Serial.print("      ");
+
+/*
+      Serial.print("Außenfeuchte: "); 
+      Serial.print(Außenfeuchte); 
+      Serial.print("% "); //  
+      Serial.print(Außentemperatur); 
+      Serial.write(B11011111); 
+      Serial.print("C.   ");
+      Serial.print("Kellerfeuchte: "); 
+      Serial.print(Kellerfeuchte); 
+      Serial.print("% ");  
+      Serial.print(Kellertemperatur); 
+      Serial.write(B11011111); 
+      Serial.println("C.");
       delay(1000);
       
-      serial.print("Taupunkt Außen:  "); 
-      serial.print(TDa);  
-      serial.write(B11011111); 
-      serial.print("C. "); // TDa = Taupunkt Aussen
-      serial.print("Taupunkt Keller:  "); 
-      serial.print(TDk);  
-      serial.write(B11011111); 
-      serial.println("C. "); // TDk = Taupunkt Keller
+      Serial.print("Taupunkt Außen:  "); 
+      Serial.print(TDa);  
+      Serial.write(B11011111); 
+      Serial.print("C. "); // TDa = Taupunkt Aussen
+      Serial.print("Taupunkt Keller:  "); 
+      Serial.print(TDk);  
+      Serial.write(B11011111); 
+      Serial.println("C. "); // TDk = Taupunkt Keller
       delay(1000);
       
-      serial.print("Taupunkte-Differenz: "); 
-      serial.print(DeltaTp);  
-      serial.write(B11011111); 
-      serial.println("C.    "); // DTp = Differenz der Taupunkte
+      Serial.print("Taupunkte-Differenz: "); 
+      Serial.print(DeltaTp);  
+      Serial.write(B11011111); 
+      Serial.println("C.    "); // DTp = Differenz der Taupunkte
       
-      serial.print("OnTime: "); 
-      serial.print(millis() / eineStunde); 
-      serial.println(" Std.  ");
+      Serial.print("OnTime: "); 
+      Serial.print(millis() / eineStunde); 
+      Serial.println(" Std.  ");
       delay(1000);  
       
-      serial.print("Lüfterstatus: "); 
-      serial.print(LuefterStatus);
-      serial.print("   Zyklus: ");
-      serial.print((millis() - Zyklus) / eineMinute);
-      serial.println(" Min.  ");
+      Serial.print("Lüfterstatus: "); 
+      Serial.print(LuefterStatus);
+      Serial.print("   Zyklus: ");
+      Serial.print((millis() - Zyklus) / eineMinute);
+      Serial.println(" Min.  ");
       delay(1000);   
       
-      serial.print("Zähler: "); 
-      serial.println(Zaehler);
-      delay(1000);
-        } 
+      Serial.print("Zähler: "); 
+      Serial.println(Zaehler);
+*/
+  }
+  listenApiRequests();
+  delay(3000);
 }
  // ... und wieder von vorn. (hoch zu void loop(){
 
@@ -309,16 +322,16 @@ void loop() {
  
  Bezeichnungen:
  r = relative Luftfeuchte
- T = Temperatur in °C
+ T = Temperatur in �C
  TK = Temperatur in Kelvin (TK = T + 273.15)
- TD = Taupunkttemperatur in °C
+ TD = Taupunkttemperatur in �C
  DD = Dampfdruck in hPa
- SDD = Sättigungsdampfdruck in hPa
+ SDD = S�ttigungsdampfdruck in hPa
  
  Parameter:
- a = 7.5, b = 237.3 für T >= 0
- a = 7.6, b = 240.7 für T < 0 über Wasser (Taupunkt)
- a = 9.5, b = 265.5 für T < 0 über Eis (Frostpunkt)
+ a = 7.5, b = 237.3 f�r T >= 0
+ a = 7.6, b = 240.7 f�r T < 0 �ber Wasser (Taupunkt)
+ a = 9.5, b = 265.5 f�r T < 0 �ber Eis (Frostpunkt)
  
  R* = 8314.3 J/(kmol*K) (universelle Gaskonstante)
  mw = 18.016 kg (Molekulargewicht des Wasserdampfes)
@@ -339,7 +352,7 @@ void loop() {
  
                relative Luftfeuchte in %
  Temperatur
- Raumluft°C 
+ Raumluft�C 
  	
         30% 	35% 	40% 	45% 	50% 	55% 	60% 	65% 	70% 	75% 	80% 	85% 	90% 	95%
  30 	10,5 	12,9 	14,9 	16,8 	18,4 	20,0 	21,4 	22,7 	23,9 	25,1 	26,2 	27,2 	28,2 	29,1
@@ -371,126 +384,4 @@ void loop() {
  
  
  
- 
- /*
- 
-#include <FreqCount.h>
 
-// includes for YunTimeSync.ino -> checked per test!
-#include <Process.h>
-#include <Time.h>
-#include "YunTimeSync.h"
-
-// includes for SaveSensorData.ino -> checked per test!
-//#include <Process.h> // already included...
-#include "SaveSensorData.h"
-
-// including Sensors -> checked per test!
-#include "Sensors.h"
-
-// include for sensosr config by CSV
-//#include <Process.h> // already included...
-#include "InitSensorsByCsv.h"
-
-// include YùnApi -> checked
-#include <YunServer.h>
-#include <YunClient.h>
-#include "YunApi.h"
-
-// variable for saving sensor data
-char currentComment[14] = "";
-
-Sensor SENSORs[6]; // keep this variable in sync with the one in Sensors.h
-Sensor activeSensor;
-
-// variables for loop control
-//const long waitIntervallForRead = 86400000; // in millisecs // 24 * 60 * 60 * 1000 => one day
-//const long waitIntervallForRead = 600000; // in millisecs // ten minutes ist best. Any sensor is triggend once in an hour
-const long waitIntervallForRead = 60000; // in millisecs // 1 * 60 * 1000 => one minute for changing the sensor ... for debugging
-
-unsigned long previousMillis = 0;        // will store last time millies were updated
-
-
-void setup() {
-
-  Serial.begin(9600);	// Initialize the Serial
-  pinMode(13, OUTPUT); // initialize the LED pin as an output
-
-  digitalWrite(13, HIGH);
-  delay(100);
-  digitalWrite(13, LOW);
-
-  // setup Brigde for InitSensorsByCSV, SaveSensorData and YùnTimeSync
-  Bridge.begin();
-
-  delay(200);
-
-  initAndSyncTime();
-
-  initSaveSensorData();
-
-  activeSensor = initSensorsByCsv();
-
-  initYunServer();
-
-  FreqCount.begin(1000);
-
-  delay(1000);
-  
-} // end void setup
-
-
-void loop() {
-  
-  unsigned long currentMillis = millis();
- 
-  if(currentMillis - previousMillis >= waitIntervallForRead) {
-
-    previousMillis = currentMillis;   
-
-    if (FreqCount.available()) {
-  
-      activeSensor.setGradeOfDrynessByFrequency(FreqCount.read());
-
-    }
-  
-    // case of ERROR!:
-    if (activeSensor.frequency == 0) {
-  
-      // for security reasons switch off the relay - in case i was on before, we stop watering!
-      digitalWrite(activeSensor.relayPinNumber, LOW);
-      strcpy(currentComment, "error");
-  
-    } else {
-  
-      if (activeSensor.justChangedGradeOfDryness()) {
-        if (activeSensor.gradeOfDryness >= 3) { // it gets too dry
-          digitalWrite(activeSensor.relayPinNumber, HIGH);
-          strcpy(currentComment, "change2tooDry");
-        } else if (activeSensor.gradeOfDryness <= 1 ) { // it gets too wet
-          digitalWrite(activeSensor.relayPinNumber, LOW);
-          strcpy(currentComment, "change2TooWet");
-        } else {
-          strcpy(currentComment, "change");
-        }
-      }
-    }
-
-    // saving the data in DB
-    insertSensorDataByPhpCli(activeSensor.frequency, activeSensor.gradeOfDryness, currentComment, (1 + activeSensor.id));
-
-    // resetting currentComment
-    strcpy(currentComment, "");
-
-    // finally switch to the next sensor
-    activeSensor = getNextSensor(activeSensor);
-
-    delay(200);
-  }
-
-  listenApiRequests();
-
-  delay(1000);
-
-} // end void loop
-*/

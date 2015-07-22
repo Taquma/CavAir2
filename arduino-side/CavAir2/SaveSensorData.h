@@ -4,5 +4,4 @@
   Released into the public domain.
 */
 
-void initSaveSensorData();
-bool insertSensorDataByPhpCli(long frequency, int gradeOfDryness, char* comment, int sensorNumber);
+bool insertSensorDataByPhpCli(float temperatureInside, float temperatureOutside, float humidityInside, float humidityOutside, float dewpointInside, float dewpointOutside, float dewpointsDifference, boolean fanState);
